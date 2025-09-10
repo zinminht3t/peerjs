@@ -62,11 +62,13 @@
         function initializePeer() {
             const host = serverHost.value || 'peerjs.testing.com';
             const port = parseInt(serverPort.value) || 443;
+            const secure = port === 443;
             
             // Initialize PeerJS with your server configuration
             peer = new Peer({
                 host: host,
                 port: port,
+                secure: secure,
                 debug: 2,
                 config: {
                     iceServers: [
@@ -87,16 +89,29 @@
             });
             
             // Handle incoming calls
-            peer.on('call', (call) => {
-                updateStatus('Incoming call... Answering automatically');
+            peer.on('call', async (call) => {
+                updateStatus('Incoming call...');
                 
-                // Answer the call with your local stream
+                // Ensure we have a local stream before answering
+                if (!localStream) {
+                    try {
+                        await startCamera();
+                    } catch (e) {
+                        updateStatus('Cannot access camera/microphone to answer', 'error');
+                        call.close();
+                        return;
+                    }
+                }
+
+                updateStatus('Answering call...');
                 call.answer(localStream);
                 currentCall = call;
                 
                 // Handle the remote stream
                 call.on('stream', (remoteStream) => {
                     remoteVideo.srcObject = remoteStream;
+                    const tryPlay = () => remoteVideo.play().catch(() => {});
+                    tryPlay();
                     updateStatus('Call connected!', 'connection-info');
                     endBtn.disabled = false;
                 });
@@ -164,6 +179,8 @@
             // Handle the remote stream
             currentCall.on('stream', (remoteStream) => {
                 remoteVideo.srcObject = remoteStream;
+                const tryPlay = () => remoteVideo.play().catch(() => {});
+                tryPlay();
                 updateStatus('Call connected!', 'connection-info');
                 endBtn.disabled = false;
             });
