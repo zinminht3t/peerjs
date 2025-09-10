@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerJS Video Streaming</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.0/peerjs.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 PeerJS Video Streaming</h1>
+        
+        <div class="controls">
+            <input type="text" id="serverHost" placeholder="Enter 'cloud' or server host" value="peerjs.testing.com">
+            <input type="text" id="serverPort" placeholder="Server Port (e.g., 9000)" value="443">
+            <button id="startBtn" class="start-btn">Start Camera</button>
+        </div>
+        
+        <div class="controls">
+            <input type="text" id="peerIdInput" placeholder="Enter Peer ID to call">
+            <button id="callBtn" class="call-btn" disabled>Call Peer</button>
+            <button id="endBtn" class="end-btn" disabled>End Call</button>
+        </div>
+        
+        <div id="status" class="status">
+            Click "Start Camera" to begin
+        </div>
+        
+        <div class="video-container">
+            <div class="video-wrapper">
+                <video id="localVideo" muted autoplay playsinline></video>
+                <div class="video-label">Your Video</div>
+            </div>
+            <div class="video-wrapper">
+                <video id="remoteVideo" autoplay playsinline></video>
+                <div class="video-label">Remote Video</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let peer;
+        let localStream;
+        let currentCall;
+        
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const startBtn = document.getElementById('startBtn');
+        const callBtn = document.getElementById('callBtn');
+        const endBtn = document.getElementById('endBtn');
+        const peerIdInput = document.getElementById('peerIdInput');
+        const serverHost = document.getElementById('serverHost');
+        const serverPort = document.getElementById('serverPort');
+        const status = document.getElementById('status');
+        
+        function updateStatus(message, type = '') {
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        function initializePeer() {
+            const host = serverHost.value || 'peerjs.testing.com';
+            const port = parseInt(serverPort.value) || 443;
+            
+            // Initialize PeerJS with your server configuration
+            peer = new Peer({
+                host: host,
+                port: port,
+                debug: 2,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                }
+            });
+            
+            peer.on('open', (id) => {
+                updateStatus(`Connected! Your Peer ID: ${id}`, 'connection-info');
+                callBtn.disabled = false;
+            });
+            
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                updateStatus(`Error: ${err.message}`, 'error');
+            });
+            
+            // Handle incoming calls
+            peer.on('call', (call) => {
+                updateStatus('Incoming call... Answering automatically');
+                
+                // Answer the call with your local stream
+                call.answer(localStream);
+                currentCall = call;
+                
+                // Handle the remote stream
+                call.on('stream', (remoteStream) => {
+                    remoteVideo.srcObject = remoteStream;
+                    updateStatus('Call connected!', 'connection-info');
+                    endBtn.disabled = false;
+                });
+                
+                call.on('close', () => {
+                    remoteVideo.srcObject = null;
+                    updateStatus('Call ended');
+                    endBtn.disabled = true;
+                    currentCall = null;
+                });
+                
+                call.on('error', (err) => {
+                    console.error('Call error:', err);
+                    updateStatus(`Call error: ${err.message}`, 'error');
+                });
+            });
+            
+            peer.on('disconnected', () => {
+                updateStatus('Disconnected from server', 'error');
+            });
+            
+            peer.on('close', () => {
+                updateStatus('Connection closed', 'error');
+            });
+        }
+        
+        async function startCamera() {
+            try {
+                // Get user media (camera and microphone)
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: true
+                });
+                
+                localVideo.srcObject = localStream;
+                updateStatus('Camera started. Connecting to server...');
+                
+                // Initialize peer connection
+                initializePeer();
+                
+                startBtn.disabled = true;
+                startBtn.textContent = 'Camera Active';
+                
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                updateStatus(`Camera error: ${err.message}`, 'error');
+            }
+        }
+        
+        function makeCall() {
+            const peerId = peerIdInput.value.trim();
+            if (!peerId) {
+                updateStatus('Please enter a peer ID to call', 'error');
+                return;
+            }
+            
+            updateStatus(`Calling ${peerId}...`);
+            
+            // Make a call
+            currentCall = peer.call(peerId, localStream);
+            
+            // Handle the remote stream
+            currentCall.on('stream', (remoteStream) => {
+                remoteVideo.srcObject = remoteStream;
+                updateStatus('Call connected!', 'connection-info');
+                endBtn.disabled = false;
+            });
+            
+            currentCall.on('close', () => {
+                remoteVideo.srcObject = null;
+                updateStatus('Call ended');
+                endBtn.disabled = true;
+                currentCall = null;
+            });
+            
+            currentCall.on('error', (err) => {
+                console.error('Call error:', err);
+                updateStatus(`Call failed: ${err.message}`, 'error');
+            });
+        }
+        
+        function endCall() {
+            if (currentCall) {
+                currentCall.close();
+                currentCall = null;
+                remoteVideo.srcObject = null;
+                updateStatus('Call ended');
+                endBtn.disabled = true;
+            }
+        }
+        
+        // Event listeners
+        startBtn.addEventListener('click', startCamera);
+        callBtn.addEventListener('click', makeCall);
+        endBtn.addEventListener('click', endCall);
+        
+        // Allow calling by pressing Enter in peer ID input
+        peerIdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !callBtn.disabled) {
+                makeCall();
+            }
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peer) {
+                peer.destroy();
+            }
+        });
+    </script>
+</body>
+</html>
