@@ -69,6 +69,7 @@
             const host = serverHost.value || 'peerjs.testing.com';
             const port = parseInt(serverPort.value) || 443;
             const secure = port === 443;
+            const path = '/peerjs';
             
             // Initialize PeerJS with your server configuration
             peer = new Peer({
@@ -79,7 +80,10 @@
                 config: {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+                        { urls: 'turns:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
                     ]
                 }
             });
@@ -152,8 +156,11 @@
         async function startCamera() {
             try {
                 // Get user media (camera and microphone)
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
+                    video: isIOS ? {
+                        facingMode: 'user'
+                    } : {
                         width: { ideal: 1280 },
                         height: { ideal: 720 }
                     },
@@ -175,7 +182,7 @@
             }
         }
         
-        function makeCall() {
+        async function makeCall() {
             const peerId = peerIdInput.value.trim();
             if (!peerId) {
                 updateStatus('Please enter a peer ID to call', 'error');
@@ -184,6 +191,16 @@
             
             updateStatus(`Calling ${peerId}...`);
             
+            // Ensure local media is available before calling
+            if (!localStream) {
+                try {
+                    await startCamera();
+                } catch (e) {
+                    updateStatus('Cannot access camera/microphone to call', 'error');
+                    return;
+                }
+            }
+
             // Make a call
             currentCall = peer.call(peerId, localStream);
             
