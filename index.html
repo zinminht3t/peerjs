@@ -29,13 +29,16 @@
         
         <div class="video-container">
             <div class="video-wrapper">
-                <video id="localVideo" muted autoplay playsinline></video>
+                <video id="localVideo" muted autoplay playsinline webkit-playsinline></video>
                 <div class="video-label">Your Video</div>
             </div>
             <div class="video-wrapper">
-                <video id="remoteVideo" autoplay playsinline></video>
+                <video id="remoteVideo" autoplay playsinline webkit-playsinline muted></video>
                 <div class="video-label">Remote Video</div>
             </div>
+        </div>
+        <div class="controls" id="iosPlayControls" style="display:none">
+            <button id="unmuteBtn" class="call-btn">Tap to Play Audio</button>
         </div>
     </div>
 
@@ -53,6 +56,9 @@
         const serverHost = document.getElementById('serverHost');
         const serverPort = document.getElementById('serverPort');
         const status = document.getElementById('status');
+        const unmuteBtn = document.getElementById('unmuteBtn');
+        const iosPlayControls = document.getElementById('iosPlayControls');
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         
         function updateStatus(message, type = '') {
             status.textContent = message;
@@ -110,6 +116,11 @@
                 // Handle the remote stream
                 call.on('stream', (remoteStream) => {
                     remoteVideo.srcObject = remoteStream;
+                    // iOS Safari requires muted autoplay or a user gesture
+                    if (isIOS) {
+                        remoteVideo.muted = true;
+                        iosPlayControls.style.display = 'flex';
+                    }
                     const tryPlay = () => remoteVideo.play().catch(() => {});
                     tryPlay();
                     updateStatus('Call connected!', 'connection-info');
@@ -179,6 +190,10 @@
             // Handle the remote stream
             currentCall.on('stream', (remoteStream) => {
                 remoteVideo.srcObject = remoteStream;
+                if (isIOS) {
+                    remoteVideo.muted = true;
+                    iosPlayControls.style.display = 'flex';
+                }
                 const tryPlay = () => remoteVideo.play().catch(() => {});
                 tryPlay();
                 updateStatus('Call connected!', 'connection-info');
@@ -212,6 +227,17 @@
         startBtn.addEventListener('click', startCamera);
         callBtn.addEventListener('click', makeCall);
         endBtn.addEventListener('click', endCall);
+
+        // iOS Safari: require user gesture to unmute/play remote audio
+        unmuteBtn.addEventListener('click', async () => {
+            try {
+                remoteVideo.muted = false;
+                await remoteVideo.play();
+                iosPlayControls.style.display = 'none';
+            } catch (e) {
+                // keep button visible if play still blocked
+            }
+        });
         
         // Allow calling by pressing Enter in peer ID input
         peerIdInput.addEventListener('keypress', (e) => {
